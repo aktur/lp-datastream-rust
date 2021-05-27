@@ -36,6 +36,24 @@ trait StockSignal {
     fn calculate(&self, series: &[f64]) -> Option<Self::SignalType>;
 }
 
+struct PriceDifference {}
+
+impl StockSignal for PriceDifference {
+    type SignalType = (f64, f64);
+    fn calculate(&self, series: &[f64]) -> Option<Self::SignalType> {
+        if !series.is_empty() {
+            // unwrap is safe here even if first == last
+            let (first, last) = (series.first().unwrap(), series.last().unwrap());
+            let abs_diff = last - first;
+            let first = if *first == 0.0 { 1.0 } else { *first };
+            let rel_diff = abs_diff / first;
+            Some((abs_diff, rel_diff))
+        } else {
+            None
+        }
+    }
+}
+
 ///
 /// Calculates the absolute and relative difference between the beginning and ending of an f64 series. The relative difference is relative to the beginning.
 ///
@@ -56,6 +74,25 @@ fn price_diff(a: &[f64]) -> Option<(f64, f64)> {
     }
 }
 
+struct WindowedSMA {
+    window_size: usize,
+}
+impl StockSignal for WindowedSMA {
+    type SignalType = Vec<f64>;
+    fn calculate(&self, series: &[f64]) -> Option<Self::SignalType> {
+        if !series.is_empty() && self.window_size > 1 {
+            Some(
+                series
+                    .windows(self.window_size)
+                    .map(|w| w.iter().sum::<f64>() / w.len() as f64)
+                    .collect(),
+            )
+        } else {
+            None
+        }
+    }
+}
+
 ///
 /// Window function to create a simple moving average
 ///
@@ -72,6 +109,20 @@ fn n_window_sma(n: usize, series: &[f64]) -> Option<Vec<f64>> {
     }
 }
 
+struct MaxPrice {}
+
+impl StockSignal for MaxPrice {
+    type SignalType = f64;
+
+    fn calculate(&self, series: &[f64]) -> Option<Self::SignalType> {
+        if series.is_empty() {
+            None
+        } else {
+            Some(series.iter().fold(f64::MIN, |acc, q| acc.max(*q)))
+        }
+    }
+}
+
 ///
 /// Find the maximum in a series of f64
 ///
@@ -80,6 +131,20 @@ fn max(series: &[f64]) -> Option<f64> {
         None
     } else {
         Some(series.iter().fold(f64::MIN, |acc, q| acc.max(*q)))
+    }
+}
+
+struct MinPrice {}
+
+impl StockSignal for MinPrice {
+    type SignalType = f64;
+
+    fn calculate(&self, series: &[f64]) -> Option<Self::SignalType> {
+        if series.is_empty() {
+            None
+        } else {
+            Some(series.iter().fold(f64::MAX, |acc, q| acc.min(*q)))
+        }
     }
 }
 
@@ -128,12 +193,12 @@ fn main() -> std::io::Result<()> {
     for symbol in opts.symbols.split(',') {
         let closes = fetch_closing_data(&symbol, &from, &to)?;
         if !closes.is_empty() {
-                // min/max of the period. unwrap() because those are Option types
-                let period_max: f64 = max(&closes).unwrap();
-                let period_min: f64 = min(&closes).unwrap();
-                let last_price = *closes.last().unwrap_or(&0.0);
-                let (_, pct_change) = price_diff(&closes).unwrap_or((0.0, 0.0));
-                let sma = n_window_sma(30, &closes).unwrap_or_default();
+            // min/max of the period. unwrap() because those are Option types
+            let period_max: f64 = max(&closes).unwrap();
+            let period_min: f64 = min(&closes).unwrap();
+            let last_price = *closes.last().unwrap_or(&0.0);
+            let (_, pct_change) = price_diff(&closes).unwrap_or((0.0, 0.0));
+            let sma = n_window_sma(30, &closes).unwrap_or_default();
 
             // a simple way to output CSV data
             println!(
